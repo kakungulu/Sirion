@@ -1,44 +1,84 @@
 #!/usr/bin/tclsh
 
-proc cbloc {code} {
-    return $code
+proc cbloc {args} {
+    set final_code {}
+    set semicolon 0
+    foreach token $args {
+        puts -nonewline $::C " "
+        if {[llength [split $token \n]]<=1} {
+	    puts -nonewline $::C [uplevel [list subst -nobackslashes $token]]
+	    set semicolon 1
+	    continue
+	}
+	puts $::C "\{"
+	uplevel $token
+	puts -nonewline $::C "\}"
+	set semicolon 0
+    }
+    if {$semicolon} {
+        puts $::C ";"
+    } else {
+        puts $::C ""
+    }
+}
+proc ppbloc {args} {
+    set final_code {}
+    foreach token $args {
+        puts -nonewline $::C " "
+        if {[llength [split $token \n]]<=1} {
+	    puts -nonewline $::C [uplevel [list subst -nobackslashes $token]]
+	    continue
+	}
+	puts $::C "\{"
+	uplevel $token
+	puts -nonewline $::C "\}"
+	set semicolon 0
+    }
+    puts $::C ""
+}
+proc comment {comment} {
+    set comment [uplevel [list subst -nobackslashes $comment]] 
+    puts $::C "// $comment"
 }
 proc preprocess {code} {
+    set final_code {}
+    set block {}
     set rank 0
-    set buffer ""
-    set retval {}
     foreach line [split $code \n] {
-        append buffer "$line\n"
-	if {[regexp {[^\\]\{\s*$} $line]} {
-	    incr rank  
-	} 
-	if {[regexp {^\s*\}\s*$} $line]} {
-	    incr rank -1
+	append final_code \n
+        if {[regexp {^\s*\.(.*)$} $line -> line_code]} {
+	    append final_code $line_code
+	    continue
+	}    
+        if {[regexp {^\s*$} $line -> line_code]} {
+	    continue
+	}    
+	if {[regexp {^\s*\#} $line]} {
+	    append final_code "ppbloc \{$line\}"
+	    continue
 	}
-	if {$rank!=0} continue
-	set buffer_list $buffer
-	set buffer {}
-        foreach arg $buffer_list {
-            if {[llength [split $arg \n]]==1} {
-	        lappend buffer [subst $arg]
-	        continue
-	    }
-	    lappend buffer [uplevel [list preprocess $arg]]
-        }
-	if {[regexp {^\s*\.} $buffer]} {
-	    regsub {^\s*\.} $buffer {} buffer
-	    append retval [uplevel $buffer]
-	} else {
-	    append retval [uplevel [list subst $buffer]]
+	if {[regexp {^\s*\}} $line]} {
+	    append final_code $line
+	    continue
 	}
-	set buffer ""
+	if {[regexp {^\s*\/\/(.*)} $line -> comment]} {
+	    append final_code [list comment $comment]
+	    continue
+	}
+	if {[regexp {^(.*)\{\s*$} $line -> preemble]} {
+	    append final_code "cbloc \{$preemble\} \{" 
+	    continue
+	}
+	append final_code  "cbloc \{$line\}" 
     }
+    uplevel $final_code
 }
 
 
 proc compile_all {dir target} {
+    puts "DIR=$dir"
     foreach file [glob -nocomplain $dir/*] {
-        set target_file [file join $target [file tail $file]
+        set target_file [file join $target [file tail $file]]
         if {[file isdirectory $file]} {
 	    if {![file exists $target_file]} {
 	        file mkdir $target_file
@@ -47,12 +87,25 @@ proc compile_all {dir target} {
 	    continue
 	}
 	if {[file exists $target_file]} {
-	    if {[file mtime $target_file]>=[file mtime $file]} continue
+	   # if {[file mtime $target_file]>=[file mtime $file]} continue
 	}
+	puts "Preprocessing $file"
+	set I [open $file r]
+	set ::C [open $target_file w]
+	preprocess [read $I]
+	close $::C
+	close $I
 	    
     }
 }
+proc unknown {args} {
+    if {[regexp {^\.(.*)$} $args -> code]} {
+        return [uplevel $code]
+    }
+    return "\[$args\]"
+}
 
+compile_all [file join [pwd] source] [file join [pwd] preprocessed]
 
 
 exit
