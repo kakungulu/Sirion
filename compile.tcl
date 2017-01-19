@@ -75,7 +75,7 @@ proc preprocess {code} {
 }
 
 
-proc compile_all {dir target} {
+proc compile_all {dir target {cmd preprocess}} {
     puts "DIR=$dir"
     foreach file [glob -nocomplain $dir/*] {
         set target_file [file join $target [file tail $file]]
@@ -89,10 +89,10 @@ proc compile_all {dir target} {
 	if {[file exists $target_file]} {
 	   # if {[file mtime $target_file]>=[file mtime $file]} continue
 	}
-	puts "Preprocessing $file"
+	puts "${cmd}-ing $file"
 	set I [open $file r]
 	set ::C [open $target_file w]
-	preprocess [read $I]
+	$cmd [read $I]
 	close $::C
 	close $I
 	    
